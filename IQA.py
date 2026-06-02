@@ -15,8 +15,8 @@ output_folder.mkdir(parents=True, exist_ok=True)
 
 target_files = ['GOV.xlsx', 'PRIV.xlsx', 'OTC.xlsx']
 
-# 💡 กำหนดชื่อสารที่ต้องการ (ใส่ '' หากต้องการดึงยาทุกตัว)
-TARGET_MOLECULE = 'MESALAZINE'
+# 💡 กำหนดชื่อสารที่ต้องการ (ใส่ 'MESALAZINE' หรือยาตัวอื่น)
+TARGET_MOLECULE = 'gabapentin'
 
 if TARGET_MOLECULE:
     output_filename = f"{TARGET_MOLECULE}_Volume_Sort_IQA.xlsx"
@@ -35,16 +35,14 @@ def get_dose_and_form(pack_name):
     if not isinstance(pack_name, str): return "Others"
     text = " ".join(pack_name.split()).upper()
     
-    # 1. ดึงความแรง (Dose) เหมือนเดิม
+    # 1. ดึงความแรง (Dose)
     dose_match = re.search(r'(\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%)(?:\s*(?:/|-)?\s*\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%))*)', text)
     dose = dose_match.group(1).strip() if dose_match else ""
     
-    # 2. เงื่อนไขดักจับรูปแบบยา (Form) จากข้อมูลทั้งหมดในเซ็ต
+    # 2. เงื่อนไขดักจับรูปแบบยา (Form) -> 🌟 อัปเดต: รวม TAB และ CAP เป็นกลุ่มเดียวกัน
     form = ""
-    if re.search(r'\b(TAB|TB|TABLET|FILM-COAT)\b', text):
-        form = "TAB"
-    elif re.search(r'\b(CAP|CAPSULE|SOFT)\b', text):
-        form = "CAP"
+    if re.search(r'\b(TAB|TB|TABLET|FILM-COAT|CAP|CAPSULE|SOFT)\b', text):
+        form = "TAB/CAP"
     elif re.search(r'\b(SUPPOS|SUPP|SUPPOSITORIES)\b', text):
         form = "SUPPOS"
     elif re.search(r'\b(GRAN|GRANS|GRANULES)\b', text):
@@ -97,14 +95,9 @@ def get_dose_and_form(pack_name):
         form = "SOAP"
     elif re.search(r'\bTOOTHPASTE\b', text):
         form = "TOOTHPASTE"
-    else:
-        form = ""
-
-    # 3. ประกอบชื่อสำหรับใช้ตั้งชื่อกลุ่มชีต
-    if dose and form:
-        return f"{dose} {form}"
-    elif dose:
-        return dose
+    
+    if dose and form: return f"{dose} {form}"
+    elif dose: return dose
     return "Others"
 
 # === REFINED MULTIPLIER LOGIC ===
@@ -148,7 +141,7 @@ for file_name in target_files:
     try:
         sheets_dict = pd.read_excel(file_path, sheet_name=None, keep_default_na=False, na_values=[''])
     except FileNotFoundError:
-        print(f"❌ 不พบไฟล์: {file_path}")
+        print(f"❌ ไม่พบไฟล์: {file_path}")
         continue
 
     prefix = Path(file_name).stem.upper()
@@ -180,7 +173,6 @@ for file_name in target_files:
         if data_df.empty: continue
             
         data_df['__PackSize'] = data_df[DETAIL_COL].apply(get_pack_multiplier)
-        # 🌟 เรียกใช้ฟังก์ชันเงื่อนไขรวมแบบใหม่ตรงนี้
         data_df['Dose_Label'] = data_df[DETAIL_COL].apply(get_dose_and_form)
         
         combined_file_df.append(data_df)
@@ -404,7 +396,7 @@ fmt_currency = '"฿"#,##0_-'; fmt_currency_2 = '"฿"#,##0.00_-'; fmt_number = 
 def copy_header_format(ws, source_rows, target_start_row):
     for r_idx, row_to_copy in enumerate(source_rows, start=0):
         target_row = target_start_row + r_idx
-        ws.row_dimensions[target_row].height = ws.row_dimensions[row_to_copy[0].row].height
+        ws.row_dimensions[target_row].height = 30 if r_idx == 2 else 20
         for cell in row_to_copy:
             new_cell = ws.cell(row=target_row, column=cell.column, value=cell.value)
             if cell.has_style:
@@ -444,14 +436,11 @@ for sheet_name_wb in wb.sheetnames:
     try:
         idx_group1 = headers.index(GROUP_COL_1)
         idx_group2 = headers.index(GROUP_COL_2)
-        idx_detail = headers.index(DETAIL_COL) if DETAIL_COL in headers else -1
-        cols_to_clear_text = [idx_group1, idx_group2, idx_detail]
     except ValueError:
-        cols_to_clear_text = []
+        idx_group1 = idx_group2 = -1
 
     for row in ws.iter_rows(min_row=4, max_row=ws.max_row):
-        try:
-            pack_val = row[idx_group1].value; manu_val = row[idx_group2].value
+        try: pack_val = row[idx_group1].value; manu_val = row[idx_group2].value
         except: pack_val = manu_val = None
         
         is_subtotal = False; is_grand_total = False; is_gov_priv_sub = False
@@ -473,11 +462,7 @@ for sheet_name_wb in wb.sheetnames:
             elif "Grand Total" in str_pack:
                 row_fill = fill_yellow; row_border = border_thick; is_grand_total = True 
             else:
-                r_idx = row[0].row
-                if r_idx <= (3 + len_gov + len_priv + has_sub):
-                    row_fill = fill_blue_gov_priv 
-                else:
-                    row_fill = fill_blue_gov_priv 
+                row_fill = fill_blue_gov_priv 
             
         for col_idx, cell in enumerate(row):
             col_name = headers[col_idx] if col_idx < len(headers) else ""
@@ -497,7 +482,7 @@ for sheet_name_wb in wb.sheetnames:
                 elif 'Values' in col_name: cell.number_format = fmt_currency
                 else: cell.number_format = fmt_number
 
-            if (is_grand_total or is_gov_priv_sub) and (col_idx in cols_to_clear_text):
+            if (is_grand_total or is_gov_priv_sub) and (col_name in [GROUP_COL_1, GROUP_COL_2, DETAIL_COL]):
                 cell.value = ""
 
     ws.row_dimensions[3].height = 30 
@@ -506,25 +491,23 @@ for sheet_name_wb in wb.sheetnames:
     elif len_priv > 0: ws['C2'] = f"PRIV {dose_lbl}"; ws['C2'].font = font_bold
     elif len_otc > 0: ws['C2'] = f"OTC {dose_lbl}"; ws['C2'].font = font_bold
 
-    # 2. แทรกแถวหัวตาราง (Insert Rows) แบบ Bottom-Up ป้องกันแถวเลื่อนสลับตำแหน่ง
-    idx_otc = 4 + len_gov + len_priv + has_sub
-    idx_priv = 4 + len_gov
     source_header = [[ws.cell(row=r, column=c) for c in range(1, ws.max_column+1)] for r in [1, 2, 3]]
     
     insert_otc = len_otc > 0 and (len_gov > 0 or len_priv > 0)
     insert_priv = len_priv > 0 and len_gov > 0
     
     if insert_otc:
+        idx_otc = 4 + len_gov + len_priv + has_sub
         ws.insert_rows(idx_otc, 3)
         copy_header_format(ws, source_header, idx_otc)
         ws.cell(row=idx_otc + 1, column=3, value=f"OTC {dose_lbl}").font = font_bold 
         
     if insert_priv:
+        idx_priv = 4 + len_gov
         ws.insert_rows(idx_priv, 3)
         copy_header_format(ws, source_header, idx_priv)
         ws.cell(row=idx_priv + 1, column=3, value=f"PRIV {dose_lbl}").font = font_bold 
 
-    # 3. ปรับขนาดหน้ากว้างคอลัมน์ (Auto-fit Width) โดยไม่นำเอาข้อความหัวตารางใหม่มาคิดคำนวณปนกับตัวเลข
     target_autofit_cols = [DETAIL_COL, 'Values (WAP) 2023', 'Units 2023', 'Values (WAP) 2024', 'Units.1 2024', 'Units 2024']
     current_headers = [str(ws.cell(row=3, column=c).value).strip() if ws.cell(row=3, column=c).value else "" for c in range(1, ws.max_column + 1)]
 
@@ -534,15 +517,12 @@ for sheet_name_wb in wb.sheetnames:
             for r in range(4, ws.max_row + 1):
                 cell_val = ws.cell(row=r, column=col_idx).value
                 if cell_val is not None and str(cell_val).strip() != "":
-                    # ข้ามแถวที่เป็นโครงสร้างหัวตารางแทรกใหม่เพื่อความแม่นยำของขนาดคอลัมน์ตัวเลข
-                    if r in [idx_priv, idx_priv+1, idx_priv+2] and insert_priv: continue
-                    if r in [idx_otc, idx_otc+1, idx_otc+2] and insert_otc: continue
+                    if insert_priv and (idx_priv <= r <= idx_priv + 2): continue
+                    if insert_otc and (idx_otc <= r <= idx_otc + 2): continue
                     
                     if isinstance(cell_val, (int, float)):
-                        if 'Units' in col_name:
-                            formatted_str = f"{cell_val:,.0f}"
-                        else:
-                            formatted_str = f"{cell_val:,.2f}"
+                        if 'Units' in col_name: formatted_str = f"{cell_val:,.0f}"
+                        else: formatted_str = f"{cell_val:,.2f}"
                         max_len = max(max_len, len(formatted_str))
                     else:
                         max_len = max(max_len, len(str(cell_val)))
@@ -552,4 +532,4 @@ for sheet_name_wb in wb.sheetnames:
             ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
 
 wb.save(output_file_path)
-print(f"✨ เสร็จสมบูรณ์! ไฟล์ประมวลผลแยกประเภทยารองรับเงื่อนไขทั้งหมดเรียบร้อย: {output_file_path.name}")
+print(f"✨ เสร็จสมบูรณ์! ไฟล์ประมวลผลยุบรวมชีต TAB/CAP เรียบร้อยแล้ว: {output_file_path.name}")
