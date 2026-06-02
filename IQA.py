@@ -30,13 +30,80 @@ GROUP_COL_1 = 'Pack Molecule String'
 GROUP_COL_2 = 'Manufacturer'
 DETAIL_COL = 'Pack'
 
-# === ฟังก์ชันดึงเฉพาะ "ปริมาณ" (ตัดจำนวนเม็ดทิ้ง) ===
-def get_dose_only(pack_name):
+# === 🌟 1. ฟังก์ชันดึง "ความแรง + รูปแบบยา" เพื่อแยกประเภทชีต 🌟 ===
+def get_dose_and_form(pack_name):
     if not isinstance(pack_name, str): return "Others"
-    text = str(pack_name).upper()
-    match = re.search(r'(\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%)(?:\s*(?:/|-)?\s*\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%))*)', text)
-    if match:
-        dose = match.group(1).strip()
+    text = " ".join(pack_name.split()).upper()
+    
+    # 1. ดึงความแรง (Dose) เหมือนเดิม
+    dose_match = re.search(r'(\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%)(?:\s*(?:/|-)?\s*\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%))*)', text)
+    dose = dose_match.group(1).strip() if dose_match else ""
+    
+    # 2. เงื่อนไขดักจับรูปแบบยา (Form) จากข้อมูลทั้งหมดในเซ็ต
+    form = ""
+    if re.search(r'\b(TAB|TB|TABLET|FILM-COAT)\b', text):
+        form = "TAB"
+    elif re.search(r'\b(CAP|CAPSULE|SOFT)\b', text):
+        form = "CAP"
+    elif re.search(r'\b(SUPPOS|SUPP|SUPPOSITORIES)\b', text):
+        form = "SUPPOS"
+    elif re.search(r'\b(GRAN|GRANS|GRANULES)\b', text):
+        form = "GRAN"
+    elif re.search(r'\bENEMA\b', text):
+        form = "ENEMA"
+    elif re.search(r'\b(CRM|CREAM)\b', text):
+        form = "CREAM"
+    elif re.search(r'\b(OINT|OINTMENT)\b', text):
+        form = "OINTMENT"
+    elif re.search(r'\bBALM\b', text):
+        form = "BALM"
+    elif re.search(r'\bPASTE\b', text):
+        form = "PASTE"
+    elif re.search(r'\b(SYR|SYRUP)\b', text):
+        form = "SYRUP"
+    elif re.search(r'\b(SUSP|SUSPENSION)\b', text):
+        form = "SUSPENSION"
+    elif re.search(r'\b(SOL|SOLN|SOLUTION)\b', text):
+        form = "SOLUTION"
+    elif re.search(r'\b(DRP|DROP|DROPS)\b', text):
+        form = "DROPS"
+    elif re.search(r'\b(MXT|MIXTURE)\b', text):
+        form = "MIXTURE"
+    elif re.search(r'\bGEL\b', text):
+        form = "GEL"
+    elif re.search(r'\b(LOT|LOTION)\b', text):
+        form = "LOTION"
+    elif re.search(r'\b(SHAMPOO|SHPO)\b', text):
+        form = "SHAMPOO"
+    elif re.search(r'\b(PWD|POWDER)\b', text):
+        form = "POWDER"
+    elif re.search(r'\b(SACHET|SAC)\b', text):
+        form = "SACHET"
+    elif re.search(r'\b(VIAL|AMP|AMP\.|AMPOULE|PREFILL|SYRG)\b', text):
+        form = "INJECTION"
+    elif re.search(r'\bSPRAY\b', text):
+        form = "SPRAY"
+    elif re.search(r'\b(INHA|INHALER)\b', text):
+        form = "INHALER"
+    elif re.search(r'\b(PLASTER|PLAST|PATCH)\b', text):
+        form = "PLASTER"
+    elif re.search(r'\b(LOZ|LOZENGE)\b', text):
+        form = "LOZENGE"
+    elif re.search(r'\bOIL\b', text):
+        form = "OIL"
+    elif re.search(r'\b(INF|INFUSION)\b', text):
+        form = "INFUSION"
+    elif re.search(r'\bSOAP\b', text):
+        form = "SOAP"
+    elif re.search(r'\bTOOTHPASTE\b', text):
+        form = "TOOTHPASTE"
+    else:
+        form = ""
+
+    # 3. ประกอบชื่อสำหรับใช้ตั้งชื่อกลุ่มชีต
+    if dose and form:
+        return f"{dose} {form}"
+    elif dose:
         return dose
     return "Others"
 
@@ -81,7 +148,7 @@ for file_name in target_files:
     try:
         sheets_dict = pd.read_excel(file_path, sheet_name=None, keep_default_na=False, na_values=[''])
     except FileNotFoundError:
-        print(f"❌ ไม่พบไฟล์: {file_path}")
+        print(f"❌ 不พบไฟล์: {file_path}")
         continue
 
     prefix = Path(file_name).stem.upper()
@@ -101,8 +168,8 @@ for file_name in target_files:
             if c in df.columns:
                 df[c] = df[c].astype(str).str.replace(r'\s+', ' ', regex=True).str.strip()
                 
-        df[GROUP_COL_1] = df[GROUP_COL_1].replace({'nan': pd.NA, '': pd.NA}).ffill()
-        df[GROUP_COL_2] = df[GROUP_COL_2].replace({'nan': pd.NA, '': pd.NA}).ffill()
+        df[GROUP_COL_1] = df[GROUP_COL_1].replace({'nan': np.nan, '': np.nan}).ffill()
+        df[GROUP_COL_2] = df[GROUP_COL_2].replace({'nan': np.nan, '': np.nan}).ffill()
 
         is_subtotal = df[GROUP_COL_2].str.contains('Subtotal', na=False) | df[GROUP_COL_1].str.contains('Subtotal', na=False)
         data_df = df[~is_subtotal].copy()
@@ -113,7 +180,8 @@ for file_name in target_files:
         if data_df.empty: continue
             
         data_df['__PackSize'] = data_df[DETAIL_COL].apply(get_pack_multiplier)
-        data_df['Dose_Label'] = data_df[DETAIL_COL].apply(get_dose_only)
+        # 🌟 เรียกใช้ฟังก์ชันเงื่อนไขรวมแบบใหม่ตรงนี้
+        data_df['Dose_Label'] = data_df[DETAIL_COL].apply(get_dose_and_form)
         
         combined_file_df.append(data_df)
         
@@ -151,9 +219,9 @@ def create_block(data_df, cols_template):
 
     def recalculate_growth(df_target):
         if val_23_col and val_24_col and val_growth_col and val_23_col in df_target and val_24_col in df_target:
-            df_target[val_growth_col] = (df_target[val_24_col] - df_target[val_23_col]) / df_target[val_23_col].replace(0, pd.NA)
+            df_target[val_growth_col] = (df_target[val_24_col] - df_target[val_23_col]) / df_target[val_23_col].replace(0, np.nan)
         if unit_23_col and unit_24_col and unit_growth_col and unit_23_col in df_target and unit_24_col in df_target:
-            df_target[unit_growth_col] = (df_target[unit_24_col] - df_target[unit_23_col]) / df_target[unit_23_col].replace(0, pd.NA)
+            df_target[unit_growth_col] = (df_target[unit_24_col] - df_target[unit_23_col]) / df_target[unit_23_col].replace(0, np.nan)
         return df_target
 
     manuf_totals = data_df.groupby([GROUP_COL_1, GROUP_COL_2], dropna=False)[calc_cols].sum().reset_index()
@@ -174,20 +242,20 @@ def create_block(data_df, cols_template):
             if sort_col in grp.columns: grp = grp.sort_values(sort_col, ascending=False)
             top_idx = grp.index[0]
             for i, r in grp.iterrows():
-                row = {c: pd.NA for c in final_cols}
+                row = {c: np.nan for c in final_cols}
                 for c in cols_template:
                     if c in r: row[c] = r[c]
-                row[GROUP_COL_2] = manuf_name if i == top_idx else pd.NA
-                row[GROUP_COL_1] = pack_name if (top_manuf_for_pack == manuf_name and i == top_idx) else pd.NA
+                row[GROUP_COL_2] = manuf_name if i == top_idx else ""
+                row[GROUP_COL_1] = pack_name if (top_manuf_for_pack == manuf_name and i == top_idx) else ""
                 out_rows.append(row)
 
-            manuf_sub_row = {c: pd.NA for c in final_cols}
+            manuf_sub_row = {c: np.nan for c in final_cols}
             manuf_sub_row[GROUP_COL_2] = f"{manuf_name} Subtotal"
             manuf_total_data = manuf_totals[(manuf_totals[GROUP_COL_1] == pack_name) & (manuf_totals[GROUP_COL_2] == manuf_name)].iloc[0]
             for col in calc_cols: manuf_sub_row[col] = manuf_total_data[col]
             out_rows.append(manuf_sub_row)
 
-        pack_sub_row = {c: pd.NA for c in final_cols}
+        pack_sub_row = {c: np.nan for c in final_cols}
         pack_sub_row[GROUP_COL_1] = f"{pack_name} Subtotal"
         pack_total_data = pack_totals[pack_totals[GROUP_COL_1] == pack_name].iloc[0]
         for col in calc_cols: pack_sub_row[col] = pack_total_data[col]
@@ -202,10 +270,10 @@ def create_block(data_df, cols_template):
         if val_col and unit_col and per_tab_col in df_insert.columns:
             vals = pd.to_numeric(df_insert[val_col], errors='coerce').fillna(0)
             units_tablets = pd.to_numeric(df_insert[unit_col], errors='coerce').fillna(0)
-            per_tab_values = vals / units_tablets.replace(0, pd.NA) 
+            per_tab_values = vals / units_tablets.replace(0, np.nan) 
             df_insert[per_tab_col] = per_tab_values
             mask_sub = (df_insert[GROUP_COL_1].astype(str).str.contains('Subtotal', na=False) | df_insert[GROUP_COL_2].astype(str).str.contains('Subtotal', na=False))
-            df_insert.loc[mask_sub, per_tab_col] = pd.NA
+            df_insert.loc[mask_sub, per_tab_col] = np.nan
 
     insert_per_tablet(final_df, '2023')
     insert_per_tablet(final_df, '2024')
@@ -219,7 +287,7 @@ def create_block(data_df, cols_template):
 def make_summary_row(raw_dfs_list, label_name, final_cols):
     if not raw_dfs_list: return None
     combined_raw = pd.concat(raw_dfs_list, ignore_index=True)
-    row_dict = {c: pd.NA for c in final_cols}
+    row_dict = {c: np.nan for c in final_cols}
     row_dict[GROUP_COL_1] = label_name
     
     v23_col = next((c for c in final_cols if 'Values' in c and '2023' in c), None)
@@ -400,14 +468,10 @@ for sheet_name_wb in wb.sheetnames:
             
         elif "Subtotal" in str_pack or "Grand Total" in str_pack:
             bold_cols.append(idx_group1); is_subtotal = True
-            
             if "GOV+PRIV Subtotal" in str_pack:
-                row_fill = fill_pink
-                is_gov_priv_sub = True 
+                row_fill = fill_pink; is_gov_priv_sub = True 
             elif "Grand Total" in str_pack:
-                row_fill = fill_yellow
-                row_border = border_thick
-                is_grand_total = True 
+                row_fill = fill_yellow; row_border = border_thick; is_grand_total = True 
             else:
                 r_idx = row[0].row
                 if r_idx <= (3 + len_gov + len_priv + has_sub):
@@ -419,13 +483,10 @@ for sheet_name_wb in wb.sheetnames:
             col_name = headers[col_idx] if col_idx < len(headers) else ""
             
             if col_idx < data_start_idx:
-                cell.fill = fill_white
-                cell.border = border_lr
-                cell.font = font_std
+                cell.fill = fill_white; cell.border = border_lr; cell.font = font_std
             else:
                 cell.border = row_border if is_subtotal else border_all
                 cell.fill = row_fill if is_subtotal else fill_white
-                
                 if is_grand_total: cell.font = font_red_bold
                 else: cell.font = font_bold if col_idx in bold_cols else font_std
             
@@ -445,36 +506,39 @@ for sheet_name_wb in wb.sheetnames:
     elif len_priv > 0: ws['C2'] = f"PRIV {dose_lbl}"; ws['C2'].font = font_bold
     elif len_otc > 0: ws['C2'] = f"OTC {dose_lbl}"; ws['C2'].font = font_bold
 
+    # 2. แทรกแถวหัวตาราง (Insert Rows) แบบ Bottom-Up ป้องกันแถวเลื่อนสลับตำแหน่ง
     idx_otc = 4 + len_gov + len_priv + has_sub
     idx_priv = 4 + len_gov
-    source_header = [ws[1], ws[2], ws[3]]
+    source_header = [[ws.cell(row=r, column=c) for c in range(1, ws.max_column+1)] for r in [1, 2, 3]]
     
     insert_otc = len_otc > 0 and (len_gov > 0 or len_priv > 0)
     insert_priv = len_priv > 0 and len_gov > 0
     
-    if insert_otc: ws.insert_rows(idx_otc, 3)
-    if insert_priv: ws.insert_rows(idx_priv, 3)
-        
     if insert_otc:
-        final_idx_otc = idx_otc + (3 if insert_priv else 0)
-        copy_header_format(ws, source_header, final_idx_otc)
-        ws.cell(row=final_idx_otc + 1, column=3, value=f"OTC {dose_lbl}").font = font_bold 
+        ws.insert_rows(idx_otc, 3)
+        copy_header_format(ws, source_header, idx_otc)
+        ws.cell(row=idx_otc + 1, column=3, value=f"OTC {dose_lbl}").font = font_bold 
         
     if insert_priv:
+        ws.insert_rows(idx_priv, 3)
         copy_header_format(ws, source_header, idx_priv)
         ws.cell(row=idx_priv + 1, column=3, value=f"PRIV {dose_lbl}").font = font_bold 
 
-    # 🌟 ปรับขนาดความกว้างให้ "พอดีกับตัวเลข" ตามที่ระบุ
+    # 3. ปรับขนาดหน้ากว้างคอลัมน์ (Auto-fit Width) โดยไม่นำเอาข้อความหัวตารางใหม่มาคิดคำนวณปนกับตัวเลข
     target_autofit_cols = [DETAIL_COL, 'Values (WAP) 2023', 'Units 2023', 'Values (WAP) 2024', 'Units.1 2024', 'Units 2024']
+    current_headers = [str(ws.cell(row=3, column=c).value).strip() if ws.cell(row=3, column=c).value else "" for c in range(1, ws.max_column + 1)]
 
-    for col_idx, col_name in enumerate(headers, 1):
-        if col_name in target_autofit_cols or any(t in col_name for t in ['Values (WAP) 2023', 'Units 2023', 'Values (WAP) 2024', 'Units 2024', 'Units.1 2024']):
+    for col_idx, col_name in enumerate(current_headers, 1):
+        if col_name in target_autofit_cols or any(t in col_name for t in ['Values (WAP) 2023', 'Units 2023', 'Values (WAP) 2024', 'Units 2024']):
             max_len = len(str(col_name))
             for r in range(4, ws.max_row + 1):
                 cell_val = ws.cell(row=r, column=col_idx).value
                 if cell_val is not None and str(cell_val).strip() != "":
+                    # ข้ามแถวที่เป็นโครงสร้างหัวตารางแทรกใหม่เพื่อความแม่นยำของขนาดคอลัมน์ตัวเลข
+                    if r in [idx_priv, idx_priv+1, idx_priv+2] and insert_priv: continue
+                    if r in [idx_otc, idx_otc+1, idx_otc+2] and insert_otc: continue
+                    
                     if isinstance(cell_val, (int, float)):
-                        # ถ้าเป็นคอลัมน์ Units ให้แสดงแบบจำนวนเต็ม ถ้าเป็น Values ให้แสดงทศนิยม เพื่อกะความยาวของช่อง
                         if 'Units' in col_name:
                             formatted_str = f"{cell_val:,.0f}"
                         else:
@@ -483,10 +547,9 @@ for sheet_name_wb in wb.sheetnames:
                     else:
                         max_len = max(max_len, len(str(cell_val)))
             
-            # ลดค่า padding ลงเหลือ 1.5 ให้ความกว้างพอดีตัวเลขเป๊ะๆ (ถ้าเป็นคอลัมน์ Pack จะบวก 4)
             padding = 4 if col_name == DETAIL_COL else 1.5
             adjusted_width = min(max_len + padding, 80)
             ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
 
 wb.save(output_file_path)
-print(f"✨ เสร็จสมบูรณ์! ไฟล์: {output_file_path.name}")
+print(f"✨ เสร็จสมบูรณ์! ไฟล์ประมวลผลแยกประเภทยารองรับเงื่อนไขทั้งหมดเรียบร้อย: {output_file_path.name}")
