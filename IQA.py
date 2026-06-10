@@ -35,8 +35,9 @@ def get_dose_and_form(pack_name):
     if not isinstance(pack_name, str): return "Others"
     text = " ".join(pack_name.split()).upper()
     
-    # 1. ดึงความแรง (Dose)
-    dose_match = re.search(r'(\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%)(?:\s*(?:/|-)?\s*\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%))*)', text)
+    # 1. ดึงความแรง (Dose) - ปรับปรุง Regex ใหม่ให้รองรับความแรงเดี่ยว และความแรงยาน้ำ (เช่น 200MG/5ML) อย่างแม่นยำ
+    # Pattern นี้จะจับคู่กับ "ตัวเลข+หน่วย" หรือ "ตัวเลข+หน่วย / ตัวเลข+หน่วย" เท่านั้น ไม่เลยเถิดไปถึงท้ายประโยค
+    dose_match = re.search(r'(\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%)(?:\s*/\s*\d+(?:\.\d+)?\s*(?:MG|G|ML|L|MCG|IU|%))?)', text)
     dose = dose_match.group(1).strip() if dose_match else ""
     
     # 2. เงื่อนไขดักจับรูปแบบยา (Form) -> 🌟 อัปเดต: รวม TAB และ CAP เป็นกลุ่มเดียวกัน
