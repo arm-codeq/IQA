@@ -396,7 +396,7 @@ fmt_currency = '"฿"#,##0_-'; fmt_currency_2 = '"฿"#,##0.00_-'; fmt_number = 
 def copy_header_format(ws, source_rows, target_start_row):
     for r_idx, row_to_copy in enumerate(source_rows, start=0):
         target_row = target_start_row + r_idx
-        ws.row_dimensions[target_row].height = 30 if r_idx == 2 else 20
+        ws.row_dimensions[target_row].height = ws.row_dimensions[row_to_copy[0].row].height
         for cell in row_to_copy:
             new_cell = ws.cell(row=target_row, column=cell.column, value=cell.value)
             if cell.has_style:
@@ -415,31 +415,72 @@ for sheet_name_wb in wb.sheetnames:
     has_sub = info.get('has_sub', 0)
     dose_lbl = info.get('dose_label', sheet_name_wb)
     
+    # 🖨️ ตั้งค่าการพิมพ์ (Print Setup) บังคับโหมดสีและยกเลิกแบบร่าง
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4             
     ws.page_margins.left = 0; ws.page_margins.right = 0; ws.page_margins.top = 0; ws.page_margins.bottom = 0
     ws.page_margins.header = 0; ws.page_margins.footer = 0
     ws.print_options.horizontalCentered = True; ws.print_options.verticalCentered = True
+    
+    ws.page_setup.blackAndWhite = False
+    ws.page_setup.draft = False
 
     ws['D1'] = "Relative MAT"; ws['G1'] = "Relative MAT"; ws['D2'] = "MAT 2023/12"; ws['G2'] = "MAT 2024/12"
     ws.merge_cells('D1:F1'); ws.merge_cells('G1:I1'); ws.merge_cells('D2:F2'); ws.merge_cells('G2:I2')
-    for cell in ws[1]: cell.fill = fill_gray_header; cell.font = font_std; cell.alignment = Alignment(horizontal='center'); cell.border = border_all
-    for cell in ws[2]: 
-        cell.fill = fill_white; cell.font = font_std; cell.alignment = Alignment(horizontal='center'); cell.border = border_all
-        if cell.column == 3: cell.font = font_bold
-
-    headers = []
-    for cell in ws[3]:
-        cell.fill = fill_gray_header; cell.font = font_std; cell.alignment = Alignment(horizontal='center', wrap_text=True); cell.border = border_all
-        headers.append(str(cell.value).strip() if cell.value else "")
+    
+    headers = [str(cell.value).strip() if cell.value else "" for cell in ws[3]]
 
     try:
         idx_group1 = headers.index(GROUP_COL_1)
         idx_group2 = headers.index(GROUP_COL_2)
+        idx_detail = headers.index(DETAIL_COL) if DETAIL_COL in headers else -1
+        cols_to_clear_text = [idx_group1, idx_group2, idx_detail]
     except ValueError:
-        idx_group1 = idx_group2 = -1
+        cols_to_clear_text = []
 
-    for row in ws.iter_rows(min_row=4, max_row=ws.max_row):
+    if len_gov > 0: ws['C2'] = f"GOV {dose_lbl}"; ws['C2'].font = font_bold
+    elif len_priv > 0: ws['C2'] = f"PRIV {dose_lbl}"; ws['C2'].font = font_bold
+    elif len_otc > 0: ws['C2'] = f"OTC {dose_lbl}"; ws['C2'].font = font_bold
+
+    # 🔄 แทรกตารางโครงสร้าง PRIV และ OTC
+    idx_priv = 4 + len_gov
+    insert_priv = len_priv > 0 and len_gov > 0
+    source_header = [ws[1], ws[2], ws[3]]
+    
+    if insert_priv:
+        ws.insert_rows(idx_priv, 3)
+        copy_header_format(ws, source_header, idx_priv)
+        ws.cell(row=idx_priv + 1, column=3, value=f"PRIV {dose_lbl}").font = font_bold 
+
+    idx_otc = 4 + len_gov + len_priv + has_sub
+    if insert_priv:
+        idx_otc += 3
+
+    insert_otc = len_otc > 0 and (len_gov > 0 or len_priv > 0)
+    if insert_otc: 
+        ws.insert_rows(idx_otc, 3)
+        copy_header_format(ws, source_header, idx_otc)
+        ws.cell(row=idx_otc + 1, column=3, value=f"OTC {dose_lbl}").font = font_bold 
+
+    # 🎨 ทำสีไฮไลต์ และจัดแนวข้อมูล
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+        r_idx = row[0].row
+        
+        if r_idx in [1, 2] or (row[3].value == "Relative MAT") or (row[3].value == "MAT 2023/12"):
+            for cell in row:
+                if r_idx == 1 or cell.value == "Relative MAT":
+                    cell.fill = fill_gray_header; cell.font = font_std; cell.alignment = Alignment(horizontal='center'); cell.border = border_all
+                else:
+                    cell.fill = fill_white; cell.font = font_std; cell.alignment = Alignment(horizontal='center'); cell.border = border_all
+                    if cell.column == 3: cell.font = font_bold
+            continue
+
+        if row[idx_group1].value == GROUP_COL_1:
+            ws.row_dimensions[r_idx].height = 30
+            for cell in row:
+                cell.fill = fill_gray_header; cell.font = font_std; cell.alignment = Alignment(horizontal='center', wrap_text=True); cell.border = border_all
+            continue
+
         try: pack_val = row[idx_group1].value; manu_val = row[idx_group2].value
         except: pack_val = manu_val = None
         
@@ -454,7 +495,6 @@ for sheet_name_wb in wb.sheetnames:
         
         if "Subtotal" in str_manu:
             row_fill = fill_gray_sub; bold_cols.append(idx_group2); is_subtotal = True
-            
         elif "Subtotal" in str_pack or "Grand Total" in str_pack:
             bold_cols.append(idx_group1); is_subtotal = True
             if "GOV+PRIV Subtotal" in str_pack:
@@ -462,7 +502,7 @@ for sheet_name_wb in wb.sheetnames:
             elif "Grand Total" in str_pack:
                 row_fill = fill_yellow; row_border = border_thick; is_grand_total = True 
             else:
-                row_fill = fill_blue_gov_priv 
+                row_fill = fill_blue_gov_priv
             
         for col_idx, cell in enumerate(row):
             col_name = headers[col_idx] if col_idx < len(headers) else ""
@@ -475,61 +515,49 @@ for sheet_name_wb in wb.sheetnames:
                 if is_grand_total: cell.font = font_red_bold
                 else: cell.font = font_bold if col_idx in bold_cols else font_std
             
-            if isinstance(cell.value, (int, float)):
+            # เช็กคอลัมน์ที่เป็นคำนวณตัวเลข
+            is_numeric_col = any(x in col_name for x in ['Values', 'Units', '%', 'Growth', 'Share', 'Per Tablet'])
+            
+            # 🌟 จุดแก้ไขที่ 2: ถ้าเป็นคอลัมน์ตัวเลข หรือมีเครื่องหมาย '-' ให้ชิดขวาเสมอ
+            if is_numeric_col or str(cell.value).strip() == "-":
                 cell.alignment = Alignment(horizontal='right')
-                if any(x in col_name for x in ['%', 'Growth', 'Share']): cell.number_format = fmt_percent
-                elif 'Per Tablet' in col_name: cell.number_format = fmt_currency_2
-                elif 'Values' in col_name: cell.number_format = fmt_currency
-                else: cell.number_format = fmt_number
+                
+                # จัดรูปแบบ Number Format ให้สวยงาม (ยกเว้นเซลล์ที่เป็นเครื่องหมาย '-')
+                if str(cell.value).strip() != "-":
+                    try:
+                        val_clean = float(str(cell.value).replace(',', '').replace('฿', '').strip())
+                        cell.value = val_clean
+                        if any(x in col_name for x in ['%', 'Growth', 'Share']): cell.number_format = fmt_percent
+                        elif 'Per Tablet' in col_name: cell.number_format = fmt_currency_2
+                        elif 'Values' in col_name: cell.number_format = fmt_currency
+                        else: cell.number_format = fmt_number
+                    except ValueError:
+                        pass
+            else:
+                # คอลัมน์ข้อความประเภทข้อความทั่วไป (เช่น Pack, Manufacturer) ให้ชิดซ้ายปกติ
+                cell.alignment = Alignment(horizontal='left')
 
-            if (is_grand_total or is_gov_priv_sub) and (col_name in [GROUP_COL_1, GROUP_COL_2, DETAIL_COL]):
+            if (is_grand_total or is_gov_priv_sub) and (col_idx in cols_to_clear_text):
                 cell.value = ""
 
-    ws.row_dimensions[3].height = 30 
-    
-    if len_gov > 0: ws['C2'] = f"GOV {dose_lbl}"; ws['C2'].font = font_bold
-    elif len_priv > 0: ws['C2'] = f"PRIV {dose_lbl}"; ws['C2'].font = font_bold
-    elif len_otc > 0: ws['C2'] = f"OTC {dose_lbl}"; ws['C2'].font = font_bold
-
-    source_header = [[ws.cell(row=r, column=c) for c in range(1, ws.max_column+1)] for r in [1, 2, 3]]
-    
-    insert_otc = len_otc > 0 and (len_gov > 0 or len_priv > 0)
-    insert_priv = len_priv > 0 and len_gov > 0
-    
-    if insert_otc:
-        idx_otc = 4 + len_gov + len_priv + has_sub
-        ws.insert_rows(idx_otc, 3)
-        copy_header_format(ws, source_header, idx_otc)
-        ws.cell(row=idx_otc + 1, column=3, value=f"OTC {dose_lbl}").font = font_bold 
-        
-    if insert_priv:
-        idx_priv = 4 + len_gov
-        ws.insert_rows(idx_priv, 3)
-        copy_header_format(ws, source_header, idx_priv)
-        ws.cell(row=idx_priv + 1, column=3, value=f"PRIV {dose_lbl}").font = font_bold 
-
+    # ปรับขนาดความกว้างให้พอดีตัวอักษร
     target_autofit_cols = [DETAIL_COL, 'Values (WAP) 2023', 'Units 2023', 'Values (WAP) 2024', 'Units.1 2024', 'Units 2024']
-    current_headers = [str(ws.cell(row=3, column=c).value).strip() if ws.cell(row=3, column=c).value else "" for c in range(1, ws.max_column + 1)]
-
-    for col_idx, col_name in enumerate(current_headers, 1):
-        if col_name in target_autofit_cols or any(t in col_name for t in ['Values (WAP) 2023', 'Units 2023', 'Values (WAP) 2024', 'Units 2024']):
+    for col_idx, col_name in enumerate(headers, 1):
+        if col_name in target_autofit_cols or any(t in col_name for t in ['Values (WAP) 2023', 'Units 2023', 'Values (WAP) 2024', 'Units 2024', 'Units.1 2024']):
             max_len = len(str(col_name))
             for r in range(4, ws.max_row + 1):
                 cell_val = ws.cell(row=r, column=col_idx).value
                 if cell_val is not None and str(cell_val).strip() != "":
-                    if insert_priv and (idx_priv <= r <= idx_priv + 2): continue
-                    if insert_otc and (idx_otc <= r <= idx_otc + 2): continue
-                    
                     if isinstance(cell_val, (int, float)):
-                        if 'Units' in col_name: formatted_str = f"{cell_val:,.0f}"
-                        else: formatted_str = f"{cell_val:,.2f}"
+                        formatted_str = f"{cell_val:,.0f}" if 'Units' in col_name else f"{cell_val:,.2f}"
                         max_len = max(max_len, len(formatted_str))
                     else:
                         max_len = max(max_len, len(str(cell_val)))
             
-            padding = 4 if col_name == DETAIL_COL else 1.5
+            # 🌟 จุดแก้ไขที่ 1: ใช้ค่า padding สั้นสุด 1.5 เท่ากันหมด ทำให้คอลัมน์ Pack กว้างพอดีข้อความ ไม่เหลือที่ว่างเกินความจำเป็น
+            padding = 1.5
             adjusted_width = min(max_len + padding, 80)
             ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
 
 wb.save(output_file_path)
-print(f"✨ เสร็จสมบูรณ์! ไฟล์ประมวลผลยุบรวมชีต TAB/CAP เรียบร้อยแล้ว: {output_file_path.name}")
+print(f"✨ เสร็จสมบูรณ์! ไฟล์: {output_file_path.name}")
