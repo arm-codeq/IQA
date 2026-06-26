@@ -16,7 +16,7 @@ output_folder.mkdir(parents=True, exist_ok=True)
 target_files = ['GOV.xlsx', 'PRIV.xlsx', 'OTC.xlsx']
 
 # 💡 กำหนดชื่อสารที่ต้องการ (ใส่ 'MESALAZINE' หรือยาตัวอื่น)
-TARGET_MOLECULE = 'gabapentin'
+TARGET_MOLECULE = 'acetylcysteine'
 
 if TARGET_MOLECULE:
     output_filename = f"{TARGET_MOLECULE}_Volume_Sort_IQA.xlsx"
@@ -46,7 +46,7 @@ def get_dose_and_form(pack_name):
         form = "TAB/CAP"
     elif re.search(r'\b(SUPPOS|SUPP|SUPPOSITORIES)\b', text):
         form = "SUPPOS"
-    elif re.search(r'\b(GRAN|GRANS|GRANULES)\b', text):
+    elif re.search(r'\b(GRAN|GRANS|GRANULES|GRN)\b', text):
         form = "GRAN"
     elif re.search(r'\bENEMA\b', text):
         form = "ENEMA"
